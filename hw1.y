@@ -2,25 +2,21 @@
     #include <stdio.h>
     #include <stdlib.h>
     #include <string.h>
-    
-    // Node structure for AST
-    typedef struct node {
-        char *token;
-        struct node *left;
-        struct node *right;
-    } node;
-    
+    #include "ast.h"
+    #define YYSTYPE struct node*
+
     // Function declarations
     node *makenode(char* token, node* left, node* right);
+    void free_node(node *n);
     void printtree(node *tree, int indent);
     int yylex(void);
     int yyerror(char *s);
-    
-    #define YYSTYPE struct node*
+
     extern int lineno;
     extern char* yytext;
 
     node* ast_root = NULL; 
+    
 %}
 
 // Token definitions - match these with your LEX file
@@ -42,8 +38,9 @@
 
 %%
 // Grammar rules
-program     : funcs { $$ = makenode("CODE", $1, NULL); }
-            ;
+program     : funcs { $$ = makenode("CODE", $1, NULL);
+                    ast_root = $$;}
+                ;
 
 funcs : func { $$ = $1; }
       | funcs func { $$ = makenode("FUNCS", $1, $2); }
@@ -210,52 +207,19 @@ literal : INTEGER_LITERAL { $$ = makenode($1->token, NULL, NULL); }
 
 #include "lex.yy.c"
 
-// Tree printing func
-void printtree(node *tree, int indent) {
-    if (tree == NULL) return;
-    
-    // Print indentation
-    for (int i = 0; i < indent; i++) {
-        printf(" ");
-    }
-    
-    // Print the current node
-    printf("(%s\n", tree->token);
-    
-    // Print children with increased indentation
-    if (tree->left) printtree(tree->left, indent + 2);
-    if (tree->right) printtree(tree->right, indent + 2);
-    
-    // Close the parenthesis
-    for (int i = 0; i < indent; i++) {
-        printf(" ");
-    }
-    printf(")\n");
-}
-
 // Error reporting func
 int yyerror(char *s) {
     fprintf(stderr, "Error at line %d: %s\n", lineno, s);
     return 0;
 }
-// Node creation func
-node *makenode(char* token, node* left, node* right) {
-    node *new_node = (node *)malloc(sizeof(node));
-    if (new_node == NULL) {
-        fprintf(stderr, "Error: Out of memory\n");
-        exit(1);
-    }
-    new_node->token = strdup(token);
-    new_node->left = left;
-    new_node->right = right;
-    return new_node;
-}
 
 // Main func
 int main() {
     if (yyparse() == 0) {
-        // Print the AST starting from the root node, which should be in $$
-        printtree($$, 0);
+        printtree(ast_root, 0); // Print the AST starting from the root node, which should be in $$
+        free_node(ast_root);  // free the AST
+        ast_root = NULL;  // reset the root to NULL after freeing
+
     }
     return 0;
 }
