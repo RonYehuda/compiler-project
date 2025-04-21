@@ -14,7 +14,7 @@ node *makenode(char* token, node* left, node* right) {
         fprintf(stderr, "Error: Out of memory\n");
         exit(1);
     }
-    new_node->token = strdup(token);
+    new_node->token = token ? strdup(token) : NULL;
     new_node->left = left;
     new_node->right = right;
     return new_node;
@@ -48,6 +48,6 @@ void free_node(node *n) {
     if (n == NULL) return;
     free_node(n->left);
     free_node(n->right);
-    free(n->token);  // free the string
-    free(n);        // free the node 
+    if (n->token) free(n->token);  // free the string
+    free(n);                      // free the node 
 }

@@ -1,0 +1,27 @@
+def test_all_features(int x, y; string s): {
+    # Test while loop
+    while x < 10: {
+        x = x + 1;
+    }
+    
+    # Test if-elif-else
+    if x > 5: {
+        y = 1;
+    } elif x == 5: {
+        y = 2;
+    } else: {
+        y = 3;
+    }
+    
+    # Test string operations
+    s = "hello world";
+    s = s[0];           # Index
+    s = s[1:5];         # Range
+    s = s[1:5:2];       # Range with step
+    s = s[:5];          # Start to
+    s = s[5:];          # From end
+    s = s[:];           # Full
+    
+    # Test multi-assignment
+    x, y = 10, 20;
+}

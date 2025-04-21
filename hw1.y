@@ -3,26 +3,34 @@
     #include <stdlib.h>
     #include <string.h>
     #include "ast.h"
-    #define YYSTYPE struct node*
 
     // Function declarations
-    node *makenode(char* token, node* left, node* right);
-    void free_node(node *n);
-    void printtree(node *tree, int indent);
+    void yyerror(char *s);
     int yylex(void);
-    int yyerror(char *s);
-
+    
     extern int lineno;
     extern char* yytext;
-
-    node* ast_root = NULL; 
-    
+    extern node* ast_root;
 %}
 
-// Token definitions - match these with your LEX file
-%token IF ELIF ELSE WHILE RETURN AND OR NOT PASS DEF BOOL INT STRING
-%token INTEGER_LITERAL FLOAT_LITERAL ID STRING_LITERAL TRUE_LIT FALSE_LIT
-%token TYPE EQ BIG_EQ SMALL_EQ NO_EQ POWER
+%union {
+    node* ast_node;
+    char* string_val;
+    int int_val;
+}
+
+// Token definitions
+%token <string_val> IF ELIF ELSE WHILE RETURN AND OR NOT PASS DEF BOOL INT STRING
+%token <string_val> INTEGER_LITERAL FLOAT_LITERAL ID STRING_LITERAL TRUE_LIT FALSE_LIT
+%token <string_val> TYPE EQ BIG_EQ SMALL_EQ NO_EQ POWER
+
+// Non-terminal types
+%type <ast_node> program funcs func params param_decl id_list 
+%type <ast_node> type body sts st statement block
+%type <ast_node> if_statement elif_list while_statement 
+%type <ast_node> assignment_statement multi_id_list multi_exp_list
+%type <ast_node> return_statement function_call string_index
+%type <ast_node> exp exp_list
 
 // Precedence rules
 %right '='  
@@ -38,188 +46,158 @@
 
 %%
 // Grammar rules
-program     : funcs { $$ = makenode("CODE", $1, NULL);
-                    ast_root = $$;}
-                ;
-
-funcs : func { $$ = $1; }
-      | funcs func { $$ = makenode("FUNCS", $1, $2); }
-      ;
-
-func : DEF ID '(' params ')' ':' '{' body '}' 
-     { $$ = makenode("FUNC", $2, makenode("ARGS", $4, makenode("RETURN VOID", NULL, makenode("BODY", $8, NULL)))); }
-     | DEF ID '(' params ')' TYPE ':' '{' body '}' 
-     { $$ = makenode("FUNC", $2, makenode("ARGS", $4, makenode("RET", $6, makenode("BODY", $9, NULL)))); }
-     | DEF ID '(' params ')' ':' st ';' 
-     { $$ = makenode("FUNC", $2, makenode("ARGS", $4, makenode("RETURN VOID", NULL, makenode("BODY", $7, NULL)))); }
-     | DEF ID '(' params ')' TYPE ':' st ';' 
-     { $$ = makenode("FUNC", $2, makenode("ARGS", $4, makenode("RET", $6, makenode("BODY", $8, NULL)))); }
-     ;
-
-params : /* empty */ { $$ = makenode("NONE", NULL, NULL); }
-       | param_decl { $$ = $1; }
-       | params ';' param_decl { $$ = makenode("PARAMS", $1, $3); }
-       ;
-
-param_decl : type id_list { $$ = makenode($1->token, $2, NULL); }
-           | type id_list_with_defaults { $$ = makenode($1->token, $2, NULL); }
-           ;
-
-id_list : ID { $$ = makenode($1->token, NULL, NULL); }
-        | id_list ',' ID { $$ = makenode("LIST", $1, makenode($3->token, NULL, NULL)); }
-        ;
-
-id_list_with_defaults : ID ':' literal { $$ = makenode("DEFAULT", makenode($1->token, NULL, NULL), $3); }
-                      | id_list_with_defaults ',' ID ':' literal { $$ = makenode("LIST", $1, makenode("DEFAULT", makenode($3->token, NULL, NULL), $5)); }
-                      ;
-
-type : INT { $$ = makenode("INT", NULL, NULL); }
-     | BOOL { $$ = makenode("BOOL", NULL, NULL); }
-     | STRING { $$ = makenode("STRING", NULL, NULL); }
-     ;
-
-body : /* empty */ { $$ = makenode("EMPTY", NULL, NULL); }
-     | declaration_list sts { $$ = makenode("BLOCK", $1, $2); }
-     ;
-
-declaration_list : /* empty */ { $$ = NULL; }
-                 | declaration_list declaration { 
-                     if ($1 == NULL) 
-                         $$ = $2; 
-                     else 
-                         $$ = makenode("DECL_LIST", $1, $2); 
-                 }
-                 ;
-
-declaration : type id_list ';' { $$ = makenode("DECL", $1, $2); }
-            | type id_list '=' exp ';' { $$ = makenode("DECL_INIT", $1, makenode("ASSIGN", $2, $4)); }
+program     : funcs { $$ = makenode("CODE", $1, NULL); ast_root = $$; }
             ;
 
-sts : st { $$ = $1; }
-    | sts st { $$ = makenode("STMTS", $1, $2); }
-    ;
+funcs       : func { $$ = $1; }
+            | funcs func { $$ = makenode("FUNCS", $1, $2); }
+            ;
 
-st : assignment_statement { $$ = $1; }
-   | if_statement { $$ = $1; }
-   | while_statement { $$ = $1; }
-   | return_statement { $$ = $1; }
-   | function_call ';' { $$ = $1; }
-   | PASS ';' { $$ = makenode("PASS", NULL, NULL); }
-   | '{' sts '}' { $$ = makenode("BLOCK", $2, NULL); }
-   ;
+func        : DEF ID '(' params ')' ':' block 
+            { $$ = makenode("FUNC", makenode($2, NULL, NULL), 
+                    makenode("ARGS", $4, makenode("RETURN VOID", NULL, makenode("BODY", $7, NULL)))); }
+            | DEF ID '(' params ')' TYPE type ':' block 
+            { $$ = makenode("FUNC", makenode($2, NULL, NULL), 
+                    makenode("ARGS", $4, makenode("RET", $7, makenode("BODY", $9, NULL)))); }
+            ;
 
-assignment_statement : ID '=' exp ';' { $$ = makenode("ASS", makenode($1->token, NULL, NULL), $3); }
-                     | string_index '=' exp ';' { $$ = makenode("ASS", $1, $3); }
-                     | multi_id_list '=' multi_exp_list ';' { $$ = makenode("MULTI_ASS", $1, $3); }
+params      : /* empty */ { $$ = makenode("NONE", NULL, NULL); }
+            | param_decl { $$ = $1; }
+            | params ';' param_decl { $$ = makenode("PARAMS", $1, $3); }
+            ;
+
+param_decl  : type id_list { $$ = makenode($1->token, $2, NULL); }
+            ;
+
+id_list     : ID { $$ = makenode($1, NULL, NULL); }
+            | id_list ',' ID { $$ = makenode("LIST", $1, makenode($3, NULL, NULL)); }
+            ;
+
+type        : INT { $$ = makenode("INT", NULL, NULL); }
+            | BOOL { $$ = makenode("BOOL", NULL, NULL); }
+            | STRING { $$ = makenode("STRING", NULL, NULL); }
+            ;
+
+block       : '{' body '}' { $$ = $2; }
+            ;
+
+body        : /* empty */ { $$ = makenode("EMPTY", NULL, NULL); }
+            | sts { $$ = makenode("BLOCK", NULL, $1); }
+            ;
+
+sts         : st { $$ = $1; }
+            | sts st { $$ = makenode("STMTS", $1, $2); }
+            ;
+
+st          : statement ';' { $$ = $1; }
+            | if_statement { $$ = $1; }
+            | while_statement { $$ = $1; }
+            | block { $$ = $1; }
+            ;
+
+statement   : assignment_statement { $$ = $1; }
+            | return_statement { $$ = $1; }
+            | function_call { $$ = $1; }
+            | PASS { $$ = makenode("PASS", NULL, NULL); }
+            ;
+
+assignment_statement : ID '=' exp { $$ = makenode("ASS", makenode($1, NULL, NULL), $3); }
+                     | string_index '=' exp { $$ = makenode("ASS", $1, $3); }
+                     | multi_id_list '=' multi_exp_list { $$ = makenode("MULTI_ASS", $1, $3); }
                      ;
 
-multi_id_list : ID { $$ = makenode($1->token, NULL, NULL); }
-              | multi_id_list ',' ID { $$ = makenode("ID_LIST", $1, makenode($3->token, NULL, NULL)); }
+multi_id_list : ID { $$ = makenode($1, NULL, NULL); }
+              | multi_id_list ',' ID { $$ = makenode("ID_LIST", $1, makenode($3, NULL, NULL)); }
               ;
 
 multi_exp_list : exp { $$ = $1; }
                | multi_exp_list ',' exp { $$ = makenode("EXP_LIST", $1, $3); }
                ;
 
-if_statement : IF exp ':' st 
-             { $$ = makenode("IF", $2, $4); }
-             | IF exp ':' st ELSE ':' st 
-             { $$ = makenode("IF-ELSE", $2, makenode("THEN", $4, makenode("ELSE", $7, NULL))); }
-             | IF exp ':' st elif_list 
-             { $$ = makenode("IF-ELIF", $2, makenode("THEN", $4, $5)); }
-             | IF exp ':' st elif_list ELSE ':' st 
-             { $$ = makenode("IF-ELIF-ELSE", $2, makenode("THEN", $4, makenode("ELIF-ELSE", $5, makenode("ELSE", $8, NULL)))); }
+if_statement : IF exp ':' block { $$ = makenode("IF", $2, $4); }
+             | IF exp ':' block ELSE ':' block 
+               { $$ = makenode("IF-ELSE", $2, makenode("THEN", $4, makenode("ELSE", $7, NULL))); }
+             | IF exp ':' block elif_list
+               { $$ = makenode("IF-ELIF", $2, makenode("THEN", $4, $5)); }
+             | IF exp ':' block elif_list ELSE ':' block
+               { $$ = makenode("IF-ELIF-ELSE", $2, makenode("THEN", $4, makenode("ELIF-ELSE", $5, makenode("ELSE", $8, NULL)))); }
              ;
 
-elif_list : ELIF exp ':' st 
-          { $$ = makenode("ELIF", $2, $4); }
-          | elif_list ELIF exp ':' st 
-          { $$ = makenode("ELIF-LIST", $1, makenode("ELIF", $3, $5)); }
-          ;
+elif_list   : ELIF exp ':' block 
+              { $$ = makenode("ELIF", $2, $4); }
+            | elif_list ELIF exp ':' block 
+              { $$ = makenode("ELIF-LIST", $1, makenode("ELIF", $3, $5)); }
+            ;
 
-while_statement : WHILE exp ':' st 
-                { $$ = makenode("WHILE", $2, $4); }
+while_statement : WHILE exp ':' block
+                  { $$ = makenode("WHILE", $2, $4); }
                 ;
 
-return_statement : RETURN ';' 
-                 { $$ = makenode("RET", NULL, NULL); }
-                 | RETURN exp ';' 
-                 { $$ = makenode("RET", $2, NULL); }
+return_statement : RETURN { $$ = makenode("RET", NULL, NULL); }
+                 | RETURN exp { $$ = makenode("RET", $2, NULL); }
                  ;
 
-function_call : ID '(' ')' 
-              { $$ = makenode("CALL", makenode($1->token, NULL, NULL), NULL); }
-              | ID '(' exp_list ')' 
-              { $$ = makenode("CALL", makenode($1->token, NULL, NULL), $3); }
+function_call : ID '(' ')' { $$ = makenode("CALL", makenode($1, NULL, NULL), NULL); }
+              | ID '(' exp_list ')' { $$ = makenode("CALL", makenode($1, NULL, NULL), $3); }
               ;
 
-exp_list : exp { $$ = $1; }
-         | exp_list ',' exp { $$ = makenode("ARGS", $1, $3); }
-         ;
+exp_list    : exp { $$ = $1; }
+            | exp_list ',' exp { $$ = makenode("ARGS", $1, $3); }
+            ;
 
 string_index : ID '[' exp ']' 
-             { $$ = makenode("INDEX", makenode($1->token, NULL, NULL), $3); }
+               { $$ = makenode("INDEX", makenode($1, NULL, NULL), $3); }
              | ID '[' exp ':' exp ']' 
-             { $$ = makenode("SLICE", makenode($1->token, NULL, NULL), makenode("RANGE", $3, $5)); }
+               { $$ = makenode("SLICE", makenode($1, NULL, NULL), makenode("RANGE", $3, $5)); }
              | ID '[' exp ':' exp ':' exp ']' 
-             { $$ = makenode("SLICE", makenode($1->token, NULL, NULL), makenode("RANGE_STEP", $3, makenode("TO", $5, $7))); }
+               { $$ = makenode("SLICE", makenode($1, NULL, NULL), makenode("RANGE_STEP", $3, makenode("TO", $5, $7))); }
              | ID '[' ':' exp ']' 
-             { $$ = makenode("SLICE", makenode($1->token, NULL, NULL), makenode("START_TO", makenode("0", NULL, NULL), $4)); }
+               { $$ = makenode("SLICE", makenode($1, NULL, NULL), makenode("START_TO", makenode("0", NULL, NULL), $4)); }
              | ID '[' exp ':' ']' 
-             { $$ = makenode("SLICE", makenode($1->token, NULL, NULL), makenode("FROM_END", $3, NULL)); }
+               { $$ = makenode("SLICE", makenode($1, NULL, NULL), makenode("FROM_END", $3, NULL)); }
              | ID '[' ':' ']' 
-             { $$ = makenode("SLICE", makenode($1->token, NULL, NULL), makenode("FULL", NULL, NULL)); }
+               { $$ = makenode("SLICE", makenode($1, NULL, NULL), makenode("FULL", NULL, NULL)); }
              ;
 
-exp : INTEGER_LITERAL { $$ = makenode($1->token, NULL, NULL); }
-    | FLOAT_LITERAL { $$ = makenode($1->token, NULL, NULL); }
-    | STRING_LITERAL { $$ = makenode($1->token, NULL, NULL); }
-    | TRUE_LIT { $$ = makenode("True", NULL, NULL); }
-    | FALSE_LIT { $$ = makenode("False", NULL, NULL); }
-    | ID { $$ = makenode($1->token, NULL, NULL); }
-    | string_index { $$ = $1; }
-    | function_call { $$ = $1; }
-    | '(' exp ')' { $$ = $2; }
-    | exp '+' exp { $$ = makenode("+", $1, $3); }
-    | exp '-' exp { $$ = makenode("-", $1, $3); }
-    | exp '*' exp { $$ = makenode("*", $1, $3); }
-    | exp '/' exp { $$ = makenode("/", $1, $3); }
-    | exp POWER exp { $$ = makenode("**", $1, $3); }
-    | exp EQ exp { $$ = makenode("==", $1, $3); }
-    | exp NO_EQ exp { $$ = makenode("!=", $1, $3); }
-    | exp '>' exp { $$ = makenode(">", $1, $3); }
-    | exp '<' exp { $$ = makenode("<", $1, $3); }
-    | exp BIG_EQ exp { $$ = makenode(">=", $1, $3); }
-    | exp SMALL_EQ exp { $$ = makenode("<=", $1, $3); }
-    | exp AND exp { $$ = makenode("and", $1, $3); }
-    | exp OR exp { $$ = makenode("or", $1, $3); }
-    | NOT exp { $$ = makenode("not", $2, NULL); }
-    | '-' exp { $$ = makenode("neg", $2, NULL); }
-    ;
+exp         : INTEGER_LITERAL { $$ = makenode($1, NULL, NULL); }
+            | FLOAT_LITERAL { $$ = makenode($1, NULL, NULL); }
+            | STRING_LITERAL { $$ = makenode($1, NULL, NULL); }
+            | TRUE_LIT { $$ = makenode("True", NULL, NULL); }
+            | FALSE_LIT { $$ = makenode("False", NULL, NULL); }
+            | ID { $$ = makenode($1, NULL, NULL); }
+            | string_index { $$ = $1; }
+            | function_call { $$ = $1; }
+            | '(' exp ')' { $$ = $2; }
+            | exp '+' exp { $$ = makenode("+", $1, $3); }
+            | exp '-' exp { $$ = makenode("-", $1, $3); }
+            | exp '*' exp { $$ = makenode("*", $1, $3); }
+            | exp '/' exp { $$ = makenode("/", $1, $3); }
+            | exp POWER exp { $$ = makenode("**", $1, $3); }
+            | exp EQ exp { $$ = makenode("==", $1, $3); }
+            | exp NO_EQ exp { $$ = makenode("!=", $1, $3); }
+            | exp '>' exp { $$ = makenode(">", $1, $3); }
+            | exp '<' exp { $$ = makenode("<", $1, $3); }
+            | exp BIG_EQ exp { $$ = makenode(">=", $1, $3); }
+            | exp SMALL_EQ exp { $$ = makenode("<=", $1, $3); }
+            | exp AND exp { $$ = makenode("and", $1, $3); }
+            | exp OR exp { $$ = makenode("or", $1, $3); }
+            | NOT exp { $$ = makenode("not", $2, NULL); }
+            | '-' exp { $$ = makenode("neg", $2, NULL); }
+            ;
 
-literal : INTEGER_LITERAL { $$ = makenode($1->token, NULL, NULL); }
-        | FLOAT_LITERAL { $$ = makenode($1->token, NULL, NULL); }
-        | STRING_LITERAL { $$ = makenode($1->token, NULL, NULL); }
-        | TRUE_LIT { $$ = makenode("True", NULL, NULL); }
-        | FALSE_LIT { $$ = makenode("False", NULL, NULL); }
-        ;
 %%
 
-#include "lex.yy.c"
-
 // Error reporting func
-int yyerror(char *s) {
-    fprintf(stderr, "Error at line %d: %s\n", lineno, s);
-    return 0;
+void yyerror(char *s) {
+    fprintf(stderr, "Error at line %d: %s near token '%s'\n", lineno, s, yytext);
 }
 
 // Main func
 int main() {
     if (yyparse() == 0) {
-        printtree(ast_root, 0); // Print the AST starting from the root node, which should be in $$
+        printtree(ast_root, 0); // Print the AST starting from the root node
         free_node(ast_root);  // free the AST
         ast_root = NULL;  // reset the root to NULL after freeing
-
     }
     return 0;
 }

@@ -1,78 +1,70 @@
-%{  
+%{
 #include <stdio.h>
 #include <string.h>
-#include "y.tab.h"
 #include "ast.h"
+
+// Include generated parser header
+#include "hw1.tab.h"
+
+// Union definition from parser
+extern YYSTYPE yylval;
+
 int lineno = 1;
-struct node;  
-struct node *makenode(char* token, struct node* left, struct node* right); 
 %}
 
 %%
-//keywords
-"if"         {return IF;}
-"elif"       {return ELIF;}
-"else"       {return ELSE;}
-"while"      {return WHILE;}
-"return"     {return RETURN;}
-"and"        {return AND;}
-"or"         {return OR;}
-"not"        {return NOT;}
-"pass"       {return PASS;}
-"def"        {return DEF;}
-"bool"       {return BOOL;}
-"int"        {return INT;}
-"string"     {return STRING;}
+"if"        { yylval.string_val = strdup(yytext); return IF; }
+"elif"      { yylval.string_val = strdup(yytext); return ELIF; }
+"else"      { yylval.string_val = strdup(yytext); return ELSE; }
+"while"     { yylval.string_val = strdup(yytext); return WHILE; }
+"return"    { yylval.string_val = strdup(yytext); return RETURN; }
+"and"       { yylval.string_val = strdup(yytext); return AND; }
+"or"        { yylval.string_val = strdup(yytext); return OR; }
+"not"       { yylval.string_val = strdup(yytext); return NOT; }
+"pass"      { yylval.string_val = strdup(yytext); return PASS; }
+"def"       { yylval.string_val = strdup(yytext); return DEF; }
+"bool"      { yylval.string_val = strdup(yytext); return BOOL; }
+"int"       { yylval.string_val = strdup(yytext); return INT; }
+"string"    { yylval.string_val = strdup(yytext); return STRING; }
 
-//operators
-"=="         {return EQ;}
-">"          {return '>';}
-">="         {return BIG_EQ;}
-"<"          {return '<';}
-"<="         {return SMALL_EQ;}
-"!="         {return NO_EQ;}
-"="          {return '=';}
-"+"          {return '+';}
-"-"          {return '-';}
-"*"          {return '*';}
-"/"          {return '/';}
-"**"         {return POWER;}
+"=="        { yylval.string_val = strdup(yytext); return EQ; }
+">"         { yylval.string_val = strdup(yytext); return '>'; }
+">="        { yylval.string_val = strdup(yytext); return BIG_EQ; }
+"<"         { yylval.string_val = strdup(yytext); return '<'; }
+"<="        { yylval.string_val = strdup(yytext); return SMALL_EQ; }
+"!="        { yylval.string_val = strdup(yytext); return NO_EQ; }
+"="         { yylval.string_val = strdup(yytext); return '='; }
+"+"         { yylval.string_val = strdup(yytext); return '+'; }
+"-"         { yylval.string_val = strdup(yytext); return '-'; }
+"*"         { yylval.string_val = strdup(yytext); return '*'; }
+"/"         { yylval.string_val = strdup(yytext); return '/'; }
+"**"        { yylval.string_val = strdup(yytext); return POWER; }
 
-//Literals
-// Integer literals - decimal
-[+-]?[1-9][0-9]* {yylval = makenode(strdup(yytext),NULL,NULL); return INTEGER_LITERAL;}
-0               {yylval = makenode("0",NULL,NULL); return INTEGER_LITERAL;}  // Zero as a special case
-0[xX][0-9a-fA-F]+ {yylval = makenode(strdup(yytext), NULL,NULL); return INTEGER_LITERAL;}
+[0-9]+      { yylval.string_val = strdup(yytext); return INTEGER_LITERAL; }
+[0-9]+\.[0-9]+ { yylval.string_val = strdup(yytext); return FLOAT_LITERAL; }
+"True"      { yylval.string_val = strdup(yytext); return TRUE_LIT; }
+"False"     { yylval.string_val = strdup(yytext); return FALSE_LIT; }
+[a-zA-Z_][a-zA-Z0-9_]* { yylval.string_val = strdup(yytext); return ID; }
+\"[^"]*\"   { yylval.string_val = strdup(yytext); return STRING_LITERAL; }
+'[^']*'     { yylval.string_val = strdup(yytext); return STRING_LITERAL; }
+[ \t]+      ; /* Ignore whitespace */
+\n          { lineno++; } /* Count line numbers */
+#.*$        ; /* Ignore comments */
 
-// Float literals
-[+-]?[0-9]*\.[0-9]+ {yylval = makenode(strdup(yytext),NULL,NULL); return FLOAT_LITERAL;}
+";"         { return ';'; }
+","         { return ','; }
+"{"         { return '{'; }
+"}"         { return '}'; }
+"("         { return '('; }
+")"         { return ')'; }
+"["         { return '['; }
+"]"         { return ']'; }
+"->"        { yylval.string_val = strdup(yytext); return TYPE; }
+":"         { return ':'; }
 
-// Scientific notation for floats
-[+-]?[0-9]+(\.[0-9]*)?[eE][+-]?[0-9]+ {yylval = makenode(strdup(yytext),NULL,NULL); return FLOAT_LITERAL;}
-[+-]?[0-9]*\.[0-9]+[eE][+-]?[0-9]+ {yylval = makenode(strdup(yytext),NULL,NULL); return FLOAT_LITERAL;}
-
-(_|__|[A-Za-z])([A-Za-z0-9_]*) {yylval = makenode(strdup(yytext),NULL,NULL); return ID;} //to check if 3 underscore is posiballe 
-\"[^"]*\"      {yylval = makenode(strdup(yytext),NULL,NULL); return STRING_LITERAL;}
-'[^']*'        {yylval = makenode(strdup(yytext),NULL,NULL); return STRING_LITERAL;}
-"True"         {return TRUE_LIT;}
-"False"        {return FALSE_LIT;}
-[ \t]+         ; // ignore white spaces or tab
-\n             {lineno++;} //linecounter
-#.*$           ; // ignore comments 
-
-
-//specials signs
-";"            {return ';';}
-","            {return ',';}
-"{"            {return '{';}
-"}"            {return '}';}
-"("            {return '(';}
-")"            {return ')';}
-"["            {return '[';}
-"]"            {return ']';}
-"->"           {return TYPE;}
-":"            {return ':';}
-
-.              {fprintf(stderr, "Lexical error on line %d: Unrecognized character '%s'\n", lineno, yytext);
-                return yytext[0];} // Still return the character to the parser
+.           { fprintf(stderr, "Lexical error on line %d: Unrecognized character '%s'\n", lineno, yytext); return yytext[0]; }
 %%
+
+int yywrap() {
+    return 1; /* Indicate end of input */
+}
